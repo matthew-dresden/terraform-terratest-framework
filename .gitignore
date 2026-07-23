@@ -17,7 +17,6 @@ tmp
 *.test
 *.out
 coverage*.out
-go.sum
 
 # IDE
 .idea/
@@ -44,3 +43,5 @@ framework-test.txt
 *.log
 *.bak
 *.tmp
+# golangci-lint cache artifact (created by a mis-typed flag)
+false/

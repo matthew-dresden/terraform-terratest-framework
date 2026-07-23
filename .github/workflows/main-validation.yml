@@ -96,7 +96,7 @@ jobs:
 # DISABLED: GH_APP_PRIVATE_KEY GitHub App secrets, which this repository does not
 # DISABLED: have. The `manual-approval` and `release` jobs below are commented out
 # DISABLED: so the workflow stays green; re-enable them once the environment and
-# DISABLED: secrets are provisioned. See tracking issue.
+# DISABLED: secrets are provisioned. See tracking issue #1.
 #   manual-approval:
 #     name: Manual QA Approval
 #     if: ${{ github.actor != 'release-bot[bot]' }}
