@@ -1,0 +1,46 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terraform.lock.hcl
+
+# Go
+/bin/
+/vendor/
+tmp
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage*.out
+go.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Devcontainer
+shell.env
+devcontainer-environment-variables.json
+aws-profile-map.json
+
+# Test outputs
+output.txt
+advanced-output.txt
+framework-test.txt
+*.txt
+
+# Misc
+*.log
+*.bak
+*.tmp

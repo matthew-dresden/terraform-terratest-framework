@@ -1,0 +1,6 @@
+golang 1.24.4
+golangci-lint 1.56.2
+jq 1.7.1
+pre-commit 4.2.0
+python 3.12.9
+terraform 1.12.1

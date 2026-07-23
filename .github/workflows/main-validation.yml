@@ -1,0 +1,284 @@
+name: Main Branch Validation
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate Main Branch
+    if: ${{ github.actor != 'release-bot[bot]' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev zlib1g-dev \
+            libbz2-dev libreadline-dev libsqlite3-dev curl \
+            libncursesw5-dev xz-utils tk-dev libxml2-dev \
+            libxmlsec1-dev libffi-dev liblzma-dev bc
+
+      - name: Install ASDF
+        run: |
+          git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.15.0
+          echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+          echo "$HOME/.asdf/shims" >> $GITHUB_PATH
+          source $HOME/.asdf/asdf.sh
+
+      - name: Install ASDF plugins and tools
+        run: |
+          cd $GITHUB_WORKSPACE
+          cat .tool-versions | cut -d' ' -f1 | xargs -I{} asdf plugin add {} || true
+          asdf install
+          asdf reshim
+
+      - name: Install dependencies
+        run: make configure
+
+      - name: Lint code
+        run: make lint
+
+      - name: Build CLI test
+        run: make build-cli
+
+      - name: Run unit tests
+        run: make unit-test
+
+      - name: Run functional tests
+        run: make functional-test
+        
+      - name: Run example tests
+        run: make test-example
+
+      - name: Check test coverage
+        id: coverage
+        run: |
+          REQUIRED_COVERAGE=40
+          COVERAGE=$(make test-coverage-json | jq -r '.combined_total | rtrimstr("%") | tonumber')
+          echo "Coverage: $COVERAGE%"
+          if (( $(echo "$COVERAGE < $REQUIRED_COVERAGE" | bc -l) )); then
+            echo "Test coverage is below ${REQUIRED_COVERAGE}% ($COVERAGE%)"
+            exit 1
+          fi
+          echo "Test coverage is $COVERAGE% (meets minimum requirement of ${REQUIRED_COVERAGE}%)"
+
+  codeql:
+    name: CodeQL Analysis
+    if: ${{ github.actor != 'release-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+
+# DISABLED: requires the `qa-approval` GitHub environment and the GH_APP_ID /
+# DISABLED: GH_APP_PRIVATE_KEY GitHub App secrets, which this repository does not
+# DISABLED: have. The `manual-approval` and `release` jobs below are commented out
+# DISABLED: so the workflow stays green; re-enable them once the environment and
+# DISABLED: secrets are provisioned. See tracking issue.
+#   manual-approval:
+#     name: Manual QA Approval
+#     if: ${{ github.actor != 'release-bot[bot]' }}
+#     needs: [validate, codeql]
+#     runs-on: ubuntu-24.04
+#     environment:
+#       name: qa-approval
+#       url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+#
+#     steps:
+#       - name: QA Approval
+#         run: echo "QA has been approved"
+#
+#   release:
+#     name: Release
+#     needs: [manual-approval]
+#     runs-on: ubuntu-24.04
+#     permissions:
+#       contents: write
+#       id-token: write
+#
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+#
+#       - name: Install system dependencies
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y build-essential libssl-dev zlib1g-dev \
+#             libbz2-dev libreadline-dev libsqlite3-dev curl \
+#             libncursesw5-dev xz-utils tk-dev libxml2-dev \
+#             libxmlsec1-dev libffi-dev liblzma-dev bc
+#
+#       - name: Install ASDF
+#         run: |
+#           git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.15.0
+#           echo "$HOME/.asdf/bin" >> $GITHUB_PATH
+#           echo "$HOME/.asdf/shims" >> $GITHUB_PATH
+#           source $HOME/.asdf/asdf.sh
+#
+#       - name: Install ASDF plugins and tools
+#         run: |
+#           cd $GITHUB_WORKSPACE
+#           cat .tool-versions | cut -d' ' -f1 | xargs -I{} asdf plugin add {} || true
+#           asdf install
+#           asdf reshim
+#
+#       - name: Install dependencies
+#         run: make configure
+#
+#       - name: Generate token from GitHub App
+#         id: generate_token
+#         uses: tibdex/github-app-token@v2
+#         with:
+#           app_id: ${{ secrets.GH_APP_ID }}
+#           private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+#
+#       - name: Install Python semantic-release
+#         run: |
+#           pip install python-semantic-release
+#
+#       - name: Compute next version
+#         id: semantic-release
+#         env:
+#           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+#         run: |
+#           # Get current version from VERSION file
+#           CURRENT_VERSION=$(cat VERSION)
+#           echo "Current version: $CURRENT_VERSION"
+#
+#           # Use semantic-release to determine next version
+#           RAW_VERSION=$(python -m semantic_release version --print)
+#           echo "Raw version from semantic-release: $RAW_VERSION"
+#
+#           # Ensure we have a non-empty version and add v prefix if needed
+#           if [[ -z "$RAW_VERSION" ]]; then
+#             echo "No new version detected, using current version"
+#             NEW_VERSION=$CURRENT_VERSION
+#           else
+#             # Add v prefix if not present
+#             if [[ "$RAW_VERSION" != v* ]]; then
+#               NEW_VERSION="v$RAW_VERSION"
+#             else
+#               NEW_VERSION="$RAW_VERSION"
+#             fi
+#           fi
+#
+#           echo "Final version: $NEW_VERSION"
+#           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+#
+#       - name: Generate changelog
+#         env:
+#           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+#         run: |
+#           python -m semantic_release changelog
+#
+#       - name: Update VERSION file
+#         run: |
+#           VERSION="${{ steps.semantic-release.outputs.version }}"
+#           echo "$VERSION" > VERSION
+#           echo "Updated VERSION file to $VERSION"
+#
+#       - name: Commit changelog and version bump
+#         id: commit-changes
+#         env:
+#           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+#         run: |
+#           VERSION="${{ steps.semantic-release.outputs.version }}"
+#           echo "VERSION: $VERSION"
+#
+#           if [[ -z "$VERSION" ]]; then
+#             echo "ERROR: version is empty. Exiting."
+#             exit 1
+#           fi
+#
+#           git config --global user.name "release-bot[bot]"
+#           git config --global user.email "release-bot[bot]@users.noreply.github.com"
+#           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}
+#           git checkout -b release-$VERSION
+#           git add CHANGELOG.md VERSION
+#           git commit -m "chore(release): $VERSION"
+#           git push origin release-$VERSION
+#
+#           PR_URL=$(gh pr create \
+#             --title "Release $VERSION" \
+#             --body "Automated release PR for version $VERSION" \
+#             --base main \
+#             --head release-$VERSION)
+#
+#           echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+#           gh pr merge ${PR_URL} --admin --merge
+#
+#       - name: Wait for PR to merge and create Git tag
+#         env:
+#           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+#         run: |
+#           set -euo pipefail
+#
+#           PR_URL="${{ steps.commit-changes.outputs.pr_url }}"
+#           PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]\+$')
+#           NEW_VERSION="${{ steps.semantic-release.outputs.version }}"
+#
+#           echo "Waiting for PR #$PR_NUMBER to be merged..."
+#
+#           MAX_ATTEMPTS=10
+#           ATTEMPT=1
+#           DELAY=3
+#
+#           while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
+#             MERGED_AT=$(gh pr view "$PR_NUMBER" --json mergedAt -q '.mergedAt' || echo "")
+#             if [[ -n "$MERGED_AT" && "$MERGED_AT" != "null" ]]; then
+#               echo "✅ PR #$PR_NUMBER merged at $MERGED_AT"
+#               break
+#             fi
+#
+#             echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS: PR not merged yet, retrying in $DELAY seconds..."
+#             sleep "$DELAY"
+#             ATTEMPT=$((ATTEMPT + 1))
+#             DELAY=$((DELAY * 2))
+#           done
+#
+#           if [ "$ATTEMPT" -gt "$MAX_ATTEMPTS" ]; then
+#             echo "⚠️ Timed out waiting for PR to merge, continuing anyway."
+#           fi
+#
+#           git fetch --all
+#           git checkout main
+#           git pull origin main
+#           git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
+#           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}
+#           git push origin "$NEW_VERSION"
+#
+#       - name: Clean up release branch
+#         env:
+#           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+#         run: |
+#           VERSION="${{ steps.semantic-release.outputs.version }}"
+#           BRANCH_NAME="release-$VERSION"
+#
+#           # Delete the release branch
+#           git push origin --delete $BRANCH_NAME
+#           echo "✅ Deleted branch $BRANCH_NAME"
+#

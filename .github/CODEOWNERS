@@ -1,0 +1,23 @@
+# This file defines code owners for the repository
+# Code owners will be automatically requested for review on pull requests
+
+# Default owners for everything in the repo
+* @matthew-dresden
+
+# CLI specific code
+/cmd/tftest/ @matthew-dresden
+
+# Core packages
+/pkg/ @matthew-dresden
+
+# Internal implementation
+/internal/ @matthew-dresden
+
+# Tests
+/tests/ @matthew-dresden
+
+# GitHub Actions workflows
+/.github/workflows/ @matthew-dresden
+
+# Example code
+/example/ @matthew-dresden
